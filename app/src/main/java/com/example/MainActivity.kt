@@ -5,8 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.ui.DashboardScreen
-import com.example.ui.ResistanceViewModel
+import com.example.ui.MarioScreen
+import com.example.ui.MarioViewModel
 import com.example.ui.theme.MyApplicationTheme
 
 class MainActivity : ComponentActivity() {
@@ -15,8 +15,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
-                val viewModel: ResistanceViewModel = viewModel()
-                DashboardScreen(viewModel = viewModel)
+                val viewModel: MarioViewModel = viewModel()
+                MarioScreen(viewModel = viewModel)
             }
         }
     }

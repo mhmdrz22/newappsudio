@@ -1,6 +1,6 @@
 {
-  "name": "ENGINNER",
-  "description": "Secure task orchestration and resistance communication terminal against The Syndicate.",
+  "name": "Super Mario Classic",
+  "description": "A fully playable, high-fidelity classic retro Super Mario platformer in Jetpack Compose, complete with physics, 3 worlds, enemies, and local leaderboard records saver.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
