@@ -199,10 +199,10 @@ class MarioViewModel(application: Application) : AndroidViewModel(application) {
     private var fireballIdSource = 1
 
     // Controls
-    var isLeftPressed = false
-    var isRightPressed = false
-    var isJumpPressed = false
-    var isSprintPressed = false
+    @Volatile var isLeftPressed = false
+    @Volatile var isRightPressed = false
+    @Volatile var isJumpPressed = false
+    @Volatile var isSprintPressed = false
 
     val gameLock = Any()
 
@@ -632,18 +632,20 @@ class MarioViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun fireAction() {
-        if (marioSize.value == "FIRE" && fireballs.size < 3) {
-            val fVx = if (facingRight.value) 5f else -5f
-            val fVy = 2f
-            fireballs.add(
-                Fireball(
-                    id = fireballIdSource++,
-                    x = marioX.value + (if (facingRight.value) getMarioWidth() else -10f),
-                    y = marioY.value + 10f,
-                    vx = fVx,
-                    vy = fVy
+        synchronized(gameLock) {
+            if (marioSize.value == "FIRE" && fireballs.size < 3) {
+                val fVx = if (facingRight.value) 5f else -5f
+                val fVy = 2f
+                fireballs.add(
+                    Fireball(
+                        id = fireballIdSource++,
+                        x = marioX.value + (if (facingRight.value) getMarioWidth() else -10f),
+                        y = marioY.value + 10f,
+                        vx = fVx,
+                        vy = fVy
+                    )
                 )
-            )
+            }
         }
         // Also triggers a speed dash if moving, handled by `currentSpeedLimit` in movement
     }

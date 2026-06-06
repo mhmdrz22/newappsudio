@@ -281,8 +281,8 @@ fun MarioStartScreen(viewModel: MarioViewModel) {
             contentScale = ContentScale.Crop
         )
 
-        // 2. Translucent dark overlay with gradient mask at the bottom for absolute readability of controls
-        Box(
+        // 3. User Controls Column (with Translucent dark overlay background)
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
@@ -294,12 +294,6 @@ fun MarioStartScreen(viewModel: MarioViewModel) {
                         )
                     )
                 )
-        )
-
-        // 3. User Controls Column
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
                 .padding(horizontal = 24.dp, vertical = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
@@ -1008,29 +1002,34 @@ fun PressingButton(
     colors: ButtonColors = ButtonDefaults.buttonColors(),
     content: @Composable RowScope.() -> Unit
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
+    var isPressed by remember { mutableStateOf(false) }
 
     LaunchedEffect(isPressed) {
         onPressed(isPressed)
     }
 
-    androidx.compose.material3.Button(
-        onClick = {}, // Hold states are tracked via interactionSource
-        interactionSource = interactionSource,
-        modifier = modifier,
-        shape = shape,
-        colors = colors,
-        contentPadding = PaddingValues(0.dp),
-        content = {
-            Row(
-                modifier = Modifier.fillMaxSize(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-                content = content
-            )
+    Box(
+        modifier = modifier
+            .background(if (isPressed) colors.containerColor(true).value.copy(alpha = 0.7f) else colors.containerColor(true).value, shape)
+            .clip(shape)
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    isPressed = true
+                    waitForUpOrCancellation()
+                    isPressed = false
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            content()
         }
-    )
+    }
 }
 
 @Composable
