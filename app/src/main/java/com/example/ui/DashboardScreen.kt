@@ -12,6 +12,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -34,6 +38,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import com.example.data.ResistanceTask
 import com.example.data.TransmissionLog
 import com.example.ui.theme.*
@@ -48,6 +54,37 @@ fun DashboardScreen(viewModel: ResistanceViewModel) {
     val syndicateInterference by viewModel.syndicateInterference.collectAsState()
     val networkLatency by viewModel.networkLatency.collectAsState()
     val activeDecryptions by viewModel.activeDecryptions.collectAsState()
+    val systemLogs by viewModel.systemLogs.collectAsState()
+    val glitchActive by viewModel.glitchActive.collectAsState()
+
+    val haptic = LocalHapticFeedback.current
+    val parallaxOffset by rememberParallaxOffset(sensitivity = 1.5f)
+
+    // Central shader timer
+    val shaderTimeSpec = rememberInfiniteTransition(label = "shader_time")
+    val shaderTime by shaderTimeSpec.animateFloat(
+        initialValue = 0f,
+        targetValue = 100f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(100000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "shader_time_anim"
+    )
+
+    val runtimeShader = remember {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            android.graphics.RuntimeShader(CYBERPUNK_SHADER)
+        } else null
+    }
+
+    // Periodic acoustic alarms/crackles when terminal experiences syndicate interference glitches
+    LaunchedEffect(glitchActive) {
+        if (glitchActive) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            CyberBeep.playGlitch()
+        }
+    }
 
     var currentTab by remember { mutableStateOf(0) } // 0 = COMS, 1 = MISSIONS, 2 = SYSTEMS
     var showAddDialog by remember { mutableStateOf(false) }
@@ -63,10 +100,25 @@ fun DashboardScreen(viewModel: ResistanceViewModel) {
         label = "scan_y"
     )
 
+    // Glitchy offset shifts to mimic hardware interface instability
+    val glitchOffsetX = if (glitchActive) kotlin.random.Random.nextInt(-5, 5).dp else 0.dp
+    val glitchOffsetY = if (glitchActive) kotlin.random.Random.nextInt(-3, 3).dp else 0.dp
+
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
             .background(SyndicateDark)
+            .cyberpunkMonitor(glitchActive, scanlineY)
+            .offset(glitchOffsetX, glitchOffsetY)
+            .graphicsLayer {
+                if (runtimeShader != null) {
+                    runtimeShader.setFloatUniform("resolution", size.width, size.height)
+                    runtimeShader.setFloatUniform("time", shaderTime)
+                    renderEffect = android.graphics.RenderEffect.createRuntimeShaderEffect(
+                        runtimeShader, "composable"
+                    ).asComposeRenderEffect()
+                }
+            }
             .drawBehind {
                 // Background scanline overlays for authentic terminal feel
                 val linePosition = scanlineY * size.height
@@ -80,7 +132,11 @@ fun DashboardScreen(viewModel: ResistanceViewModel) {
         floatingActionButton = {
             if (currentTab == 1) {
                 FloatingActionButton(
-                    onClick = { showAddDialog = true },
+                    onClick = { 
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        CyberBeep.playClick()
+                        showAddDialog = true 
+                    },
                     containerColor = ResistanceGreen,
                     contentColor = SyndicateDark,
                     modifier = Modifier
@@ -102,6 +158,10 @@ fun DashboardScreen(viewModel: ResistanceViewModel) {
                 .fillMaxSize()
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp, vertical = 8.dp)
+                .graphicsLayer {
+                    translationX = parallaxOffset.x * 2.5f
+                    translationY = parallaxOffset.y * 2.5f
+                }
         ) {
             // Ultimate Resistance Hub Branding Banner
             TerminalHeader(
@@ -144,6 +204,7 @@ fun DashboardScreen(viewModel: ResistanceViewModel) {
                             onDeleteTask = { id -> viewModel.removeTask(id) }
                         )
                         2 -> SystemsNodeTab(
+                            systemLogs = systemLogs,
                             syndicateInterference = syndicateInterference,
                             networkLatency = networkLatency
                         )
@@ -184,7 +245,7 @@ fun TerminalHeader(syndicateInterference: Int, networkLatency: Int) {
                 text = "PHASE 2 // SYNCHRONIZATION",
                 color = ResistanceGreen.copy(alpha = 0.8f),
                 style = MaterialTheme.typography.labelMedium,
-                fontSize = 10.sp,
+                fontSize = 11.sp,
                 letterSpacing = 1.8.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 2.dp)
@@ -228,7 +289,7 @@ fun TerminalHeader(syndicateInterference: Int, networkLatency: Int) {
             verticalAlignment = Alignment.Bottom
         ) {
             Text(
-                text = "ENGINNER",
+                text = "ENGINEER",
                 color = Color.White,
                 style = MaterialTheme.typography.displayMedium,
                 fontSize = 32.sp,
@@ -290,6 +351,7 @@ fun TerminalHeader(syndicateInterference: Int, networkLatency: Int) {
 
 @Composable
 fun TabSelectionRow(currentTab: Int, onTabSelected: (Int) -> Unit) {
+    val haptic = LocalHapticFeedback.current
     val tabs = listOf(
         Triple("COMS_DOWNLINK", Icons.AutoMirrored.Filled.Send, "tab_coms"),
         Triple("TACTICAL_MISSIONS", Icons.AutoMirrored.Filled.List, "tab_missions"),
@@ -315,7 +377,11 @@ fun TabSelectionRow(currentTab: Int, onTabSelected: (Int) -> Unit) {
                     .clip(RoundedCornerShape(12.dp))
                     .background(if (isSelected) ResistanceGreen.copy(alpha = 0.1f) else Color.Transparent)
                     .border(1.dp, outlineColor, RoundedCornerShape(12.dp))
-                    .clickable { onTabSelected(index) }
+                    .clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        CyberBeep.playClick()
+                        onTabSelected(index)
+                    }
                     .testTag(pair.third)
                     .padding(horizontal = 4.dp),
                 contentAlignment = Alignment.Center
@@ -359,14 +425,16 @@ fun ComsConsoleTab(
     var selectedChannelProfile by remember { mutableStateOf("STATIONARY HANDSHAKE") }
     val channelProfiles = listOf("STATIONARY HANDSHAKE", "MILITARY BURST FREQ", "ORACLE DECOY BUBBLE")
 
-    val filteredTransmissions = remember(transmissions, searchQuery) {
-        if (searchQuery.isBlank()) {
-            transmissions
-        } else {
-            transmissions.filter {
-                it.sender.contains(searchQuery, ignoreCase = true) ||
-                        it.decryptedContent.contains(searchQuery, ignoreCase = true) ||
-                        it.encryptedContent.contains(searchQuery, ignoreCase = true)
+    val filteredTransmissions by remember(transmissions, searchQuery) {
+        derivedStateOf {
+            if (searchQuery.isBlank()) {
+                transmissions
+            } else {
+                transmissions.filter {
+                    it.sender.contains(searchQuery, ignoreCase = true) ||
+                            it.decryptedContent.contains(searchQuery, ignoreCase = true) ||
+                            it.encryptedContent.contains(searchQuery, ignoreCase = true)
+                }
             }
         }
     }
@@ -656,25 +724,34 @@ fun TransmissionLogItem(
         Spacer(modifier = Modifier.height(6.dp))
 
         if (log.isDecrypted) {
-            Text(
+            TypewriterText(
                 text = log.decryptedContent,
                 color = ConsoleText,
                 style = MaterialTheme.typography.bodyMedium
             )
         } else {
+            val haptic = LocalHapticFeedback.current
             Column {
-                Text(
-                    text = "CIPHER: ${log.encryptedContent}",
-                    color = WarningGold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                if (isDecrypting) {
+                    MatrixCrackEffect()
+                } else {
+                    Text(
+                        text = "CIPHER: ${log.encryptedContent}",
+                        color = WarningGold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Button(
-                    onClick = onDecrypt,
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        CyberBeep.playAlarm()
+                        onDecrypt()
+                    },
                     enabled = !isDecrypting,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = WarningGold,
@@ -724,17 +801,21 @@ fun MissionsTab(
     var searchQuery by remember { mutableStateOf("") }
     var selectedSectorFilter by remember { mutableStateOf("ALL") }
 
-    val distinctSectors = remember(tasks) {
-        listOf("ALL") + tasks.map { it.targetSector }.distinct().filter { it.isNotBlank() }
+    val distinctSectors by remember(tasks) {
+        derivedStateOf {
+            listOf("ALL") + tasks.map { it.targetSector }.distinct().filter { it.isNotBlank() }
+        }
     }
 
-    val filteredTasks = remember(tasks, searchQuery, selectedSectorFilter) {
-        tasks.filter { task ->
-            val matchesQuery = task.title.contains(searchQuery, ignoreCase = true) ||
-                    task.description.contains(searchQuery, ignoreCase = true) ||
-                    task.targetSector.contains(searchQuery, ignoreCase = true)
-            val matchesSector = selectedSectorFilter == "ALL" || task.targetSector == selectedSectorFilter
-            matchesQuery && matchesSector
+    val filteredTasks by remember(tasks, searchQuery, selectedSectorFilter) {
+        derivedStateOf {
+            tasks.filter { task ->
+                val matchesQuery = task.title.contains(searchQuery, ignoreCase = true) ||
+                        task.description.contains(searchQuery, ignoreCase = true) ||
+                        task.targetSector.contains(searchQuery, ignoreCase = true)
+                val matchesSector = selectedSectorFilter == "ALL" || task.targetSector == selectedSectorFilter
+                matchesQuery && matchesSector
+            }
         }
     }
 
@@ -1078,40 +1159,11 @@ fun TacticalMissionItem(
 val ResistanceGreenGlow = Color(0x2200FF66)
 
 @Composable
-fun SystemsNodeTab(syndicateInterference: Int, networkLatency: Int) {
+fun SystemsNodeTab(systemLogs: List<String>, syndicateInterference: Int, networkLatency: Int) {
     var check1 by remember { mutableStateOf(false) }
     var check2 by remember { mutableStateOf(false) }
     var firewallPurgeInProgress by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-
-    val systemLogs = remember { mutableStateListOf<String>() }
-
-    LaunchedEffect(Unit) {
-        if (systemLogs.isEmpty()) {
-            systemLogs.add("[INF] Systems initialized securely.")
-            systemLogs.add("[SYS] Local database synced with Room cluster.")
-            systemLogs.add("[NET] Bypassing Syndicate firewall handshake...")
-            systemLogs.add("[SYS] Thermal masking protocol active.")
-        }
-        val pool = listOf(
-            "[SYS] Rotating security handshakes ports... [SUCCESS]",
-            "[ALRT] Syndicate load scans blocked securely.",
-            "[NET] Siphoning decrypted packet sequences.",
-            "[SYS] Memory fragmentation optimized to 0.02%.",
-            "[INF] Rotating encryption keys on node cluster...",
-            "[SYS] Inbound socket handshake validated.",
-            "[ALRT] Heavy load simulation checked under limits.",
-            "[NET] Handshake routing latency: ${networkLatency}ms stable."
-        )
-        while (true) {
-            delay(3500)
-            val randomLog = pool.random()
-            systemLogs.add(randomLog)
-            if (systemLogs.size > 8) {
-                systemLogs.removeAt(0)
-            }
-        }
-    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1176,17 +1228,6 @@ fun SystemsNodeTab(syndicateInterference: Int, networkLatency: Int) {
                             strokeWidth = 1.0f
                         )
 
-                        // Dynamic sweeping search indicator line
-                        val radian = Math.toRadians(radarAngle.toDouble())
-                        val endX = center.x + radius * Math.cos(radian).toFloat()
-                        val endY = center.y + radius * Math.sin(radian).toFloat()
-                        drawLine(
-                            color = ResistanceGreen,
-                            start = center,
-                            end = Offset(endX, endY),
-                            strokeWidth = 3.0f
-                        )
-
                         // Mock Resistance Station Nodes
                         drawCircle(
                             color = InfoCyan,
@@ -1207,6 +1248,26 @@ fun SystemsNodeTab(syndicateInterference: Int, networkLatency: Int) {
                                 center = Offset(center.x + radius * 0.1f, center.y - radius * 0.5f)
                             )
                         }
+                    }
+
+                    // Rotating canvas layer for sweeping line (rotated purely by GPU via graphicsLayer)
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                rotationZ = radarAngle
+                            }
+                    ) {
+                        val center = Offset(size.width / 2f, size.height / 2f)
+                        val radius = size.minDimension / 2.3f
+
+                        // Dynamic sweeping search indicator line
+                        drawLine(
+                            color = ResistanceGreen,
+                            start = center,
+                            end = Offset(center.x + radius, center.y),
+                            strokeWidth = 3.0f
+                        )
                     }
 
                     // Labels on Canvas
@@ -1527,7 +1588,7 @@ fun SystemsNodeTab(syndicateInterference: Int, networkLatency: Int) {
                                 text = log,
                                 color = color,
                                 style = MaterialTheme.typography.bodySmall,
-                                fontSize = 10.sp,
+                                fontSize = 12.sp,
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -1567,6 +1628,7 @@ fun AddMissionDialog(
                 modifier = Modifier
                     .padding(18.dp)
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
             ) {
                 Text(
                     text = "INITIATE MISSION PROTOCOL DATAENTRY",
@@ -1693,7 +1755,7 @@ fun AddMissionDialog(
                                 text = level,
                                 color = textCol,
                                 style = MaterialTheme.typography.bodyMedium,
-                                fontSize = 10.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -1761,4 +1823,193 @@ fun AddMissionDialog(
             }
         }
     }
+}
+
+// Extensions and helper components for Hacker mode
+object CyberBeep {
+    private val toneGen = try {
+        android.media.ToneGenerator(android.media.AudioManager.STREAM_MUSIC, 70)
+    } catch (e: Exception) {
+        null
+    }
+
+    fun playClick() {
+        try {
+            toneGen?.startTone(android.media.ToneGenerator.TONE_PROP_BEEP, 40)
+        } catch (e: Exception) {}
+    }
+
+    fun playGlitch() {
+        try {
+            toneGen?.startTone(android.media.ToneGenerator.TONE_CDMA_PIP, 60)
+        } catch (e: Exception) {}
+    }
+
+    fun playAlarm() {
+        try {
+            toneGen?.startTone(android.media.ToneGenerator.TONE_PROP_PROMPT, 80)
+        } catch (e: Exception) {}
+    }
+}
+
+@Composable
+fun TypewriterText(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = Color.Unspecified,
+    fontSize: androidx.compose.ui.unit.TextUnit = androidx.compose.ui.unit.TextUnit.Unspecified,
+    fontWeight: FontWeight? = null,
+    lineHeight: androidx.compose.ui.unit.TextUnit = androidx.compose.ui.unit.TextUnit.Unspecified,
+    fontFamily: androidx.compose.ui.text.font.FontFamily? = null,
+    style: androidx.compose.ui.text.TextStyle = androidx.compose.material3.LocalTextStyle.current,
+    typingSpeedMs: Long = 20L
+) {
+    var typedText by remember { mutableStateOf("") }
+    LaunchedEffect(text) {
+        typedText = ""
+        text.forEach { char ->
+            typedText += char
+            delay(typingSpeedMs)
+        }
+    }
+    Text(
+        text = typedText,
+        modifier = modifier,
+        color = color,
+        fontSize = fontSize,
+        fontWeight = fontWeight,
+        lineHeight = lineHeight,
+        fontFamily = fontFamily,
+        style = style
+    )
+}
+
+@Composable
+fun MatrixCrackEffect() {
+    val symbols = "0101#@$%&8X*?!Z-+_[]{}/\\|~"
+    var glitchText by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        while (true) {
+            glitchText = (1..20).map { symbols.random() }.joinToString("")
+            delay(60)
+        }
+    }
+    Text(
+        text = "DECRUNCHING: >> $glitchText <<",
+        color = WarningGold,
+        style = MaterialTheme.typography.bodyMedium,
+        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+        fontWeight = FontWeight.Bold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+    )
+}
+
+const val CYBERPUNK_SHADER = """
+    uniform shader composable;
+    uniform float2 resolution;
+    uniform float time;
+
+    half4 main(float2 fragCoord) {
+        float2 uv = fragCoord / resolution;
+        
+        // CRT curvature
+        float2 crtUv = uv * 2.0 - 1.0;
+        float offset = crtUv.y / 4.0;
+        crtUv.x *= 1.0 + pow(offset, 2.0);
+        uv = crtUv / 2.0 + 0.5;
+
+        // If coordinate went out of screen, darken it
+        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+            return half4(0.0, 0.0, 0.0, 1.0);
+        }
+
+        // Chromatic Aberration (color convergence drift)
+        float aberration = 0.003;
+        half r = composable.eval(float2((uv.x + aberration) * resolution.x, uv.y * resolution.y)).r;
+        half g = composable.eval(float2(uv.x * resolution.x, uv.y * resolution.y)).g;
+        half b = composable.eval(float2((uv.x - aberration) * resolution.x, uv.y * resolution.y)).b;
+        half a = composable.eval(fragCoord).a;
+
+        // Vintage micro scanlines
+        float scanline = sin(uv.y * 800.0 + time * 10.0) * 0.04;
+
+        return half4(r - scanline, g - scanline, b - scanline, a);
+    }
+"""
+
+@Composable
+fun rememberParallaxOffset(sensitivity: Float = 1.5f): State<androidx.compose.ui.geometry.Offset> {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val parallaxOffset = remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+
+    DisposableEffect(context) {
+        val sensorManager = context.getSystemService(android.content.Context.SENSOR_SERVICE) as? android.hardware.SensorManager
+        val gyroscope = sensorManager?.getDefaultSensor(android.hardware.Sensor.TYPE_GYROSCOPE)
+        val accelerometer = sensorManager?.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER)
+        
+        val listener = object : android.hardware.SensorEventListener {
+            override fun onSensorChanged(event: android.hardware.SensorEvent?) {
+                if (event == null) return
+                if (event.sensor.type == android.hardware.Sensor.TYPE_GYROSCOPE) {
+                    val dx = event.values[1] * sensitivity
+                    val dy = event.values[0] * sensitivity
+                    parallaxOffset.value = androidx.compose.ui.geometry.Offset(
+                        x = dx.coerceIn(-12f, 12f),
+                        y = dy.coerceIn(-12f, 12f)
+                    )
+                } else if (gyroscope == null && event.sensor.type == android.hardware.Sensor.TYPE_ACCELEROMETER) {
+                    // Fallback to accelerometer if gyroscope isn't present
+                    val dx = event.values[0] * -sensitivity * 0.15f
+                    val dy = event.values[1] * sensitivity * 0.15f
+                    parallaxOffset.value = androidx.compose.ui.geometry.Offset(
+                        x = dx.coerceIn(-12f, 12f),
+                        y = dy.coerceIn(-12f, 12f)
+                    )
+                }
+            }
+            override fun onAccuracyChanged(sensor: android.hardware.Sensor?, accuracy: Int) {}
+        }
+
+        if (sensorManager != null) {
+            if (gyroscope != null) {
+                sensorManager.registerListener(listener, gyroscope, android.hardware.SensorManager.SENSOR_DELAY_GAME)
+            } else if (accelerometer != null) {
+                sensorManager.registerListener(listener, accelerometer, android.hardware.SensorManager.SENSOR_DELAY_UI)
+            }
+        }
+
+        onDispose {
+            sensorManager?.unregisterListener(listener)
+        }
+    }
+    return parallaxOffset
+}
+
+fun Modifier.cyberpunkMonitor(
+    glitchActive: Boolean,
+    scanlineY: Float
+): Modifier = this.drawBehind {
+    // Draw horizontal vintage scan lines on screen canvas
+    val color = if (glitchActive) AlertRed.copy(alpha = 0.08f) else ResistanceGreen.copy(alpha = 0.03f)
+    val lineSpacing = 16f
+    var currentY = 0f
+    while (currentY < size.height) {
+        drawLine(
+            color = color,
+            start = Offset(0f, currentY),
+            end = Offset(size.width, currentY),
+            strokeWidth = 1.5f
+        )
+        currentY += lineSpacing
+    }
+
+    // Classic Vignette Shadow overlay around screen corners
+    drawRect(
+        brush = Brush.radialGradient(
+            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.65f)),
+            center = center,
+            radius = size.maxDimension / 1.2f
+        )
+    )
 }
